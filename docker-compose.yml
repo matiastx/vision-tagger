@@ -18,8 +18,9 @@ services:
     environment:
       # CORS: ChatLocal (browser) llama directo a /api/chat
       OLLAMA_ORIGINS: 'https://chat.mgtsolutions.uk,https://ollama.mgtsolutions.uk'
-    cpus: '6'
-    mem_limit: 8g
+    # VPS: 4 vCPU / 8 GB totales (compartidos con Coolify/backoffice/InsForge)
+    cpus: '3'
+    mem_limit: 5g
     networks:
       - ia
 
@@ -37,7 +38,7 @@ services:
       WATCH_INTERVAL_MIN: '30'
       BATCH_START_HOUR: '2'
       TZ: America/Argentina/Cordoba
-    cpus: '2'
+    cpus: '1'
     mem_limit: 256m
     networks:
       - ia
