@@ -1,0 +1,12 @@
+{
+  "name": "vision-tagger",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tagger IA de fotos de visitas (Ollama qwen2.5vl) → tabla foto_tags de InsForge. CERO dependencias npm.",
+  "scripts": {
+    "start": "node tagger.mjs",
+    "batch": "node tagger.mjs --batch",
+    "once": "node tagger.mjs --once"
+  }
+}

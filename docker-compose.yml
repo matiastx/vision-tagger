@@ -1,0 +1,51 @@
+# vision-tagger — stack IA para Coolify (plan TAGS Y GALERIA, fase 1)
+#
+# Servicios:
+#   ollama  → modelos qwen2.5vl:3b (visión) + qwen2.5:3b-instruct (chat/ChatLocal)
+#   tagger  → tagea fotos del bucket ActivadoresApp → tabla foto_tags
+#
+# Coolify: crear app "Docker Compose" apuntando a este directorio
+# (tools/vision-tagger). Ollama y el tagger comparten la red interna;
+# el puerto 11434 NO se publica — solo se expone via dominio Coolify +
+# Cloudflare Access (ver README).
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    # Los modelos se bajan una sola vez (post-deploy, ver README §2)
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      # CORS: ChatLocal (browser) llama directo a /api/chat
+      OLLAMA_ORIGINS: 'https://chat.mgtsolutions.uk,https://ollama.mgtsolutions.uk'
+    cpus: '6'
+    mem_limit: 8g
+    networks:
+      - ia
+
+  tagger:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      INSFORGE_URL: ${INSFORGE_URL}
+      INSFORGE_API_KEY: ${INSFORGE_API_KEY}
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: qwen2.5vl:3b
+      MARCAS_PROPIAS: ${MARCAS_PROPIAS:-CANCILLER,DILEMA,ESTANCIA MENDOZA,FINCA MAGNOLIA,TORO,NATIVO,LOS HELECHOS}
+      WATCH_INTERVAL_MIN: '30'
+      BATCH_START_HOUR: '2'
+      TZ: America/Argentina/Cordoba
+    cpus: '2'
+    mem_limit: 256m
+    networks:
+      - ia
+
+volumes:
+  ollama_data:
+
+networks:
+  ia:
+    driver: bridge
+
