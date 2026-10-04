@@ -32,7 +32,13 @@ const LOCK_MS = 60 * 60 * 1000 // 1 hora
 const loadJSON = <T,>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key)
-    return raw ? { ...fallback, ...(JSON.parse(raw) as Partial<T>) } : fallback
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as T
+    // Merge con defaults solo para objetos (settings/auth). Si es array
+    // (conversaciones), devolverlo tal cual: transformarlo en objeto rompe
+    // .find/.map y la página queda negra (bug F5).
+    if (Array.isArray(parsed)) return parsed
+    return { ...(fallback as object), ...(parsed as object) } as T
   } catch {
     return fallback
   }
