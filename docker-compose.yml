@@ -15,12 +15,15 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      # Descarga el modelo de RAM a los 30 min sin chat (suficiente para
-      # sostener una conversación; si se queda sin uso en medio del batch
-      # la corrida lo recarga sola al fallar la primera).
+      # Keep-alive elevado al arranque y sostenido por la ventana nocturna —
+      # el keepalive corto no juega porque el primer request del chat carga
+      # el modelo de disco (3 GB) y el cliente corta en ~60s antes de que
+      # llegue siquiera la 1ra respuesta.
       OLLAMA_KEEP_ALIVE: '30m'
       OLLAMA_MAX_LOADED_MODELS: '1'
       OLLAMA_NUM_PARALLEL: '1'
+      # Precalentar qwen2.5vl:3b apenas levanta (onda warm-up dentro del boot)
+      OLLAMA_PRELOAD_TTL: '24h'
     # Sin puertos ni dominio: ollama SOLO es accesible desde la red interna.
     cpus: '3'
     mem_limit: 5g

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   chatStream,
   fileToBase64,
+  firstTextModel,
+  firstVisionModel,
   listModels,
   DEFAULT_SETTINGS,
   type ChatAuth,
@@ -101,7 +103,12 @@ export default function App() {
       .then((m) => {
         if (cancelled) return
         setModels(m)
-        if (!settings.model && m.length > 0) setSettings((s) => ({ ...s, model: m[0] }))
+        // Default: modelo de texto (no el de visión) — más rápido y sin
+        // problemas de multimodal al iniciar. Si hay imagen se switchea.
+        if (!settings.model && m.length > 0) {
+          const pref = firstTextModel(m) ?? m[0]
+          setSettings((s) => ({ ...s, model: pref }))
+        }
       })
       .catch((e) => {
         if (!cancelled) {
@@ -247,6 +254,28 @@ export default function App() {
   const attachImage = async (file: File | undefined) => {
     if (!file) return
     setImage(await fileToBase64(file))
+    // Bug anterior: mandar foto al modelo de texto → "Multimodal data
+    // provided, but model does not support multimodal requests". Auto-cambiar
+    // al modelo de visión si va con imagen (y avisar al usuario).
+    const vision = firstVisionModel(models)
+    if (vision) {
+      const current = settings.model
+      if (current !== vision) {
+        setSettings((s) => ({ ...s, model: vision }))
+        setModelNotice(`📷 Foto detectada: cambié al modelo de visión (${vision}).`)
+        setTimeout(() => setModelNotice(null), 4000)
+      }
+    }
+  }
+
+  // Aviso temporal al conmutar modelo por la imagen
+  const [modelNotice, setModelNotice] = useState<string | null>(null)
+
+  const removeImage = () => {
+    setImage(null)
+    // Volver al modelo de texto si había uno elegido / recordado
+    const text = firstTextModel(models)
+    if (text && settings.model !== text) setSettings((s) => ({ ...s, model: text }))
   }
 
   // -------------------------------------------------------------------------
@@ -443,10 +472,15 @@ export default function App() {
 
         {/* Input */}
         <div className="border-t border-eva-border bg-eva-surface p-3">
+          {modelNotice && (
+            <p className="mb-2 rounded border border-eva-info/30 bg-eva-info-bg px-2 py-1 text-[11px] text-eva-info">
+              {modelNotice}
+            </p>
+          )}
           {image && (
             <div className="mb-2 flex items-center gap-2">
               <img src={`data:image/jpeg;base64,${image}`} alt="" className="h-12 w-12 rounded-lg object-cover" />
-              <button onClick={() => setImage(null)} className="text-xs text-eva-error hover:underline">
+              <button onClick={removeImage} className="text-xs text-eva-error hover:underline">
                 Quitar imagen
               </button>
             </div>

@@ -24,6 +24,19 @@ export interface ChatAuth {
   password: string
 }
 
+/** Modelos tendrán esto en el nombre (para detectar el que tiene visión). */
+export const VISION_MODEL_HINT = 'vl'
+
+/** Dado un listado, devuelve el primer modelo con capacidad de visión. */
+export function firstVisionModel(models: string[]): string | null {
+  return models.find((m) => m.toLowerCase().includes(VISION_MODEL_HINT)) ?? null
+}
+
+/** Dado un listado, devuelve el primer modelo de texto puro. */
+export function firstTextModel(models: string[]): string | null {
+  return models.find((m) => !m.toLowerCase().includes(VISION_MODEL_HINT)) ?? null
+}
+
 const headers = (s: Settings, auth: ChatAuth | null): HeadersInit => ({
   'Content-Type': 'application/json',
   ...(auth ? { Authorization: `Basic ${btoa(`${auth.user}:${auth.password}`)}` } : {}),
@@ -54,7 +67,9 @@ export async function chatStream(
   const res = await fetch(`${base(s)}/api/chat`, {
     method: 'POST',
     headers: headers(s, auth),
-    body: JSON.stringify({ model, messages, stream: true }),
+    // num_ctx 8192: el default 4096 es demasiado chico — saltaba
+    // "4097 tokens exceeds 4096" con imagenes + historial.
+    body: JSON.stringify({ model, messages, stream: true, options: { num_ctx: 8192 } }),
     signal,
   })
   if (!res.ok || !res.body) {
