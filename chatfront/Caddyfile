@@ -4,13 +4,16 @@
 	}
 	encode gzip
 
-	# API primero: /api/* → ollama interno (el navegador nunca habla directo)
-	route /api/* {
+	# /api/* → ollama interno (el navegador nunca habla con ollama directo)
+	@api path /api/*
+	handle @api {
 		reverse_proxy ollama:11434
 	}
 
-	# SPA (todo lo que no es /api/)
-	root * /srv
-	file_server
-	try_files {path} /index.html
+	# Todo lo demás → SPA
+	handle {
+		root * /srv
+		file_server
+		try_files {path} /index.html
+	}
 }
