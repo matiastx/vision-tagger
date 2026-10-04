@@ -282,15 +282,23 @@ function inWindow(now, { start, end }) {
   return start < end ? (h >= start && h < end) : (h >= start || h < end)
 }
 
-/** Corre pasadas dentro de la ventana hasta que no queden pendientes. */
+/** Corre pasadas dentro de la ventana hasta que no queden pendientes.
+ *  Tope duro de 8 h por sesión continua (protección: si el admin olvida
+ *  cortar la ventana 24/7, el tagger se pausa solo y re-ancla al próximo día). */
+const MAX_CONTINUOUS_MS = 8 * 3600_000
 async function runUntilEmpty() {
+  const startedAt = Date.now()
   let pass = 0
   for (;;) {
+    if (Date.now() - startedAt > MAX_CONTINUOUS_MS) {
+      console.warn(`[ventana] tope de 8 h alcanzado — pausa hasta el próximo chequeo`)
+      return 'capped'
+    }
     pass++
     const { ok, fail } = await runPass()
     const pending = (await fetchPending(false)).length
     console.log(`[ventana] pasada ${pass}: ok=${ok} fail=${fail} quedan=${pending}`)
-    if (pending === 0 || (ok === 0 && fail === 0)) break
+    if (pending === 0 || (ok === 0 && fail === 0)) return 'done'
     await sleep(5000)
   }
 }
