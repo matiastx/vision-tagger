@@ -1,13 +1,12 @@
 # vision-tagger — stack IA para Coolify (plan TAGS Y GALERIA, fase 1)
 #
 # Servicios:
-#   ollama  → modelos qwen2.5vl:3b (visión) + qwen2.5:3b-instruct (chat/ChatLocal)
-#   tagger  → tagea fotos del bucket ActivadoresApp → tabla foto_tags
-#
-# Coolify: crear app "Docker Compose" apuntando a este directorio
-# (tools/vision-tagger). Ollama y el tagger comparten la red interna;
-# el puerto 11434 NO se publica — solo se expone via dominio Coolify +
-# Cloudflare Access (ver README).
+#   ollama    → modelos qwen2.5vl:3b (visión) + qwen2.5:3b-instruct (chat)
+#               SOLO red interna. El chat llega por el proxy del chatfront.
+#   chatfront → Caddy con basic_auth (CHAT_USER / CHAT_PASS_HASH_B64 en env)
+#               sirve el SPA y proxea /api/* → ollama interno
+#   tagger    → tagea fotos del bucket ActivadoresApp → tabla foto_tags
+
 services:
   ollama:
     image: ollama/ollama:latest
@@ -23,8 +22,6 @@ services:
       OLLAMA_MAX_LOADED_MODELS: '1'
       OLLAMA_NUM_PARALLEL: '1'
     # Sin puertos ni dominio: ollama SOLO es accesible desde la red interna.
-    # El chat llega vía reverse_proxy del servicio chatfront (borra el requisito
-    # de publicar 11434 en cualquier lado, ni tailnet ni Cloudflare Access).
     cpus: '3'
     mem_limit: 5g
     networks:
@@ -36,8 +33,9 @@ services:
     depends_on:
       - ollama
     environment:
-      # Login del chat (basic_auth de Caddy): clave NUNCA en el repo,
-      # va como `CHAT_PASS_HASH_B64` (bcrypt base64) en env de Coolify.
+      # Login del chat (basic_auth de Caddy): clave NUNCA en el repo.
+      # CHAT_PASS_HASH_B64 = hash bcrypt en base64 (el $401 de bcrypt rompe
+      # la interpolación de docker-compose si va plano en env).
       CHAT_USER: ${CHAT_USER:-matiastx85}
       CHAT_PASS_HASH_B64: ${CHAT_PASS_HASH_B64}
     cpus: '0.25'
@@ -45,6 +43,8 @@ services:
     networks:
       - ia
       - coolify
+
+  tagger:
     build: .
     restart: unless-stopped
     depends_on:
@@ -72,4 +72,3 @@ networks:
   # Traefik de Coolify vive acá — chatfront se une para poder ser proxeado
   coolify:
     external: true
-
