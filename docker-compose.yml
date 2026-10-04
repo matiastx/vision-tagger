@@ -15,12 +15,11 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      # Ambos modelos entran en RAM al mismo tiempo; keep_alive 30m para que
-      # una sesión no repague la carga; el tagger vacía la cola dentro de la
-      # ventana (no se apaga hasta terminar - tambien precarga).
+      # Soportar chat + tagger simultáneos: vision y texto pueden estar en RAM
+      # a la vez; hasta 2 requests paralelos (el tagger hace batch 1×1).
       OLLAMA_KEEP_ALIVE: '30m'
       OLLAMA_MAX_LOADED_MODELS: '2'
-      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_NUM_PARALLEL: '2'
     # Sin puertos ni dominio: ollama SOLO es accesible desde la red interna.
     cpus: '3'
     mem_limit: 5g
