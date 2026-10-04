@@ -262,8 +262,17 @@ export default function App() {
       const current = settings.model
       if (current !== vision) {
         setSettings((s) => ({ ...s, model: vision }))
-        setModelNotice(`📷 Foto detectada: cambié al modelo de visión (${vision}).`)
-        setTimeout(() => setModelNotice(null), 4000)
+        setModelNotice(`📷 Foto adjunta: mejor uso ${vision} (visión).`)
+        setTimeout(() => setModelNotice(null), 5000)
+        // Pre-cargar en RAM ahora para que la respuesta no espere 60-90s
+        // de carga fría más tarde. Fire-and-forget.
+        void chatStream(
+          settings,
+          auth,
+          vision,
+          [{ role: 'user', content: 'ok' }],
+          () => {},
+        ).catch(() => {})
       }
     }
   }

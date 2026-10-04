@@ -104,15 +104,41 @@ export async function chatStream(
   }
 }
 
-/** file → base64 (sin prefijo data:), para adjuntar imágenes. */
+/** file → base64 (sin prefijo data:).
+ *  Si es imagen: downscales a max-width 1024 ┘ prefill CPU de qwen2.5vl
+ *  en 3 vCPU ~60s/turn a 1344px; a 1024px baja ~3-4x (evita que el proxy
+ *  cierre por timeout 499). */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result)
-      resolve(result.split(',')[1] ?? '')
+    if (!file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result)
+        resolve(result.split(',')[1] ?? '')
+      }
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+      return
     }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
+    // Imagen → downscale via canvas
+    const img = new Image()
+    img.onload = () => {
+      const maxDim = 1024
+      let { width, height } = img
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height)
+        width = Math.round(width * scale)
+        height = Math.round(height * scale)
+      }
+      const cv = document.createElement('canvas')
+      cv.width = width
+      cv.height = height
+      cv.getContext('2d')?.drawImage(img, 0, 0, width, height)
+      const dataUrl = cv.toDataURL('image/jpeg', 0.85)
+      resolve(dataUrl.split(',')[1] ?? '')
+      URL.revokeObjectURL(img.src)
+    }
+    img.onerror = (e) => reject(e)
+    img.src = URL.createObjectURL(file)
   })
 }

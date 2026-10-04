@@ -15,15 +15,12 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      # Keep-alive elevado al arranque y sostenido por la ventana nocturna —
-      # el keepalive corto no juega porque el primer request del chat carga
-      # el modelo de disco (3 GB) y el cliente corta en ~60s antes de que
-      # llegue siquiera la 1ra respuesta.
+      # Ambos modelos entran en RAM al mismo tiempo; keep_alive 30m para que
+      # una sesión no repague la carga; el tagger vacía la cola dentro de la
+      # ventana (no se apaga hasta terminar - tambien precarga).
       OLLAMA_KEEP_ALIVE: '30m'
-      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_MAX_LOADED_MODELS: '2'
       OLLAMA_NUM_PARALLEL: '1'
-      # Precalentar qwen2.5vl:3b apenas levanta (onda warm-up dentro del boot)
-      OLLAMA_PRELOAD_TTL: '24h'
     # Sin puertos ni dominio: ollama SOLO es accesible desde la red interna.
     cpus: '3'
     mem_limit: 5g
