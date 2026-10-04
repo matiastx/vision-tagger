@@ -6,7 +6,16 @@
 
 	encode gzip
 
-	# /api/* → ollama interno (el navegador nunca habla con ollama directo)
+	# /api/status: público (sin auth) — solo lectura del estado del modelo
+	# para que "Estado del servidor" de la WebVersion lo pruebe.
+	# Internamente responde un GET a /api/ps de ollama.
+	@status path /api/status
+	handle @status {
+		rewrite /api/status /api/ps
+		reverse_proxy ollama:11434
+	}
+
+	# /api/* resto → protegido con basic_auth
 	@api path /api/*
 	handle @api {
 		basic_auth {

@@ -265,13 +265,14 @@ async function runPass({ reprocess = false, dryRun = false } = {}) {
  *  cambiar desde la app admin sin redeployear). */
 async function getTaggerWindow() {
   try {
-    const rows = await dbGet('app_config?select=tagger_window_start,tagger_window_end&limit=1')
+    const rows = await dbGet('app_config?select=tagger_window_start,tagger_window_end,tagger_enabled&limit=1')
     const cfg = Array.isArray(rows) ? rows[0] : null
     const start = Number.isInteger(cfg?.tagger_window_start) ? cfg.tagger_window_start : 2
     const end = Number.isInteger(cfg?.tagger_window_end) ? cfg.tagger_window_end : 6
-    return { start, end }
+    const enabled = cfg?.tagger_enabled !== false
+    return { start, end, enabled }
   } catch {
-    return { start: 2, end: 6 } // default: 2 AM a 6 AM
+    return { start: 2, end: 6, enabled: true } // default: 2 AM a 6 AM
   }
 }
 
@@ -293,6 +294,13 @@ async function runUntilEmpty() {
     if (Date.now() - startedAt > MAX_CONTINUOUS_MS) {
       console.warn(`[ventana] tope de 8 h alcanzado — pausa hasta el próximo chequeo`)
       return 'capped'
+    }
+    // Releer la ventana entre pasadas — si el toggle se apagó o la ventana
+    // se cerró, paramos la sesión.
+    const win = await getTaggerWindow()
+    if (!win.enabled || !inWindow(new Date(), win)) {
+      console.log('[ventana] window cerrada o tagger deshabilitado → pausa de sesión')
+      return 'window_closed'
     }
     pass++
     const { ok, fail } = await runPass()
@@ -330,6 +338,11 @@ async function main() {
   for (;;) {
     const win = await getTaggerWindow()
     const now = new Date()
+    if (!win.enabled) {
+      console.log(`[${now.toISOString()}] Tagger deshabilitado (tagger_enabled=false) → esperando activación`)
+      await sleep(10 * 60_000)
+      continue
+    }
     if (inWindow(now, win)) {
       console.log(`[${now.toISOString()}] En ventana ${win.start}–${win.end}h → corriendo`)
       try {
