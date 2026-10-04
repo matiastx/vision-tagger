@@ -1,4 +1,4 @@
-{$CHAT_PORT:3000} {
+:3000 {
 	basicauth {
 		{$CHAT_USER} {$CHAT_PASS_HASH}
 	}
