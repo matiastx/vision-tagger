@@ -9,8 +9,8 @@ RUN npm run build
 FROM caddy:2-alpine
 COPY --from=build /app/dist /srv
 COPY Caddyfile /etc/caddy/Caddyfile
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 EXPOSE 3000
-# USER y HASH vienen del entorno (Coolify env vars, no el repo):
-#   CHAT_USER  (ej: matiastx85)
-#   CHAT_PASS_HASH (bcrypt; Caddy solo acepta bcrypt en basicauth)
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
+# CHAT_USER y CHAT_PASS_HASH_B64 vienen del entorno (Coolify env vars).
+ENTRYPOINT ["/entrypoint.sh"]

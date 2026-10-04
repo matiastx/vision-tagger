@@ -1,6 +1,6 @@
 :3000 {
-	basicauth {
-		{$CHAT_USER} {$CHAT_PASS_HASH}
+	basic_auth {
+		@CHAT_USER@ @CHAT_PASS_HASH@
 	}
 	encode gzip
 

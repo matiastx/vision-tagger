@@ -37,10 +37,9 @@ services:
       - ollama
     environment:
       # Login del chat (basic_auth de Caddy): clave NUNCA en el repo,
-      # va como env en Coolify (CHAT_PASS_HASH) en formato bcrypt.
+      # va como `CHAT_PASS_HASH_B64` (bcrypt base64) en env de Coolify.
       CHAT_USER: ${CHAT_USER:-matiastx85}
-      CHAT_PASS_HASH: ${CHAT_PASS_HASH}
-      CHAT_PORT: '3000'
+      CHAT_PASS_HASH_B64: ${CHAT_PASS_HASH_B64}
     cpus: '0.25'
     mem_limit: 64m
     networks:
