@@ -13,10 +13,13 @@
 			@CHAT_USER@ @CHAT_PASS_HASH@
 		}
 		reverse_proxy ollama:11434 {
-			# Streaming: flush apenas llega algo, sin buffer
+			# default es 30s/None; explícitamente 0 porque qwen2.5vl en CPU
+			# puede tardar 60-90s en la primera pasada con imagen (prefill).
 			flush_interval -1
 			transport http {
 				read_timeout 0
+				write_timeout 0
+				dial_timeout 10s
 			}
 		}
 	}
