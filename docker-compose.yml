@@ -18,6 +18,12 @@ services:
     environment:
       # CORS: ChatLocal (browser) llama directo a /api/chat
       OLLAMA_ORIGINS: 'https://chat.mgtsolutions.uk,https://ollama.mgtsolutions.uk'
+      # Descarga el modelo de RAM a los 2 min sin uso → en reposo el
+      # contenedor queda casi sin consumo (se "despierta" solo ante el
+      # primer request de chat o tagger)
+      OLLAMA_KEEP_ALIVE: '2m'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_NUM_PARALLEL: '1'
     # VPS: 4 vCPU / 8 GB totales (compartidos con Coolify/backoffice/InsForge)
     cpus: '3'
     mem_limit: 5g
