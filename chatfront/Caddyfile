@@ -1,4 +1,9 @@
 :3000 {
+	log {
+		output stdout
+		level INFO
+	}
+
 	encode gzip
 
 	# /api/* → ollama interno (el navegador nunca habla con ollama directo)
