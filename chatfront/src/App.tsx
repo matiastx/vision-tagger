@@ -189,6 +189,24 @@ export default function App() {
       return
     }
 
+    // Si hay imagen, garantizar modelo de visión (evita multiples 400 por
+    // multimodal con modelos de texto-no-vision)
+    let modelToUse = settings.model
+    if (image) {
+      const vision = firstVisionModel(models)
+      if (vision && modelToUse !== vision) {
+        modelToUse = vision
+        setSettings((s) => ({ ...s, model: vision }))
+      }
+    }
+
+    // Si tenemos imagen y el modelo de visión no está en RAM todavía, el
+    // primer mensaje puede llegar a 60+s. Con keep_alive=30m del server,
+    // solo pasa la primera vez tras una pausa larga.
+    if (image) {
+      setModelNotice('⏳ Subiendo y procesando imagen… la primera respuesta puede tardar ~1 min si el modelo está frío.')
+    }
+
     let convId = activeId
     if (!convId) {
       const conv: Conversation = { id: uid(), title: text.slice(0, 40) || 'Imagen', createdAt: Date.now(), messages: [] }
@@ -221,7 +239,9 @@ export default function App() {
     const history = [...(conversations.find((c) => c.id === id)?.messages ?? []), userMsg]
 
     try {
-      await chatStream(settings, auth, settings.model, history, (chunk) => {
+      await chatStream(settings, auth, modelToUse, history, (chunk) => {
+        // Limpiar el aviso cuando llega el primer chunk
+        setModelNotice((cur) => (cur?.startsWith('⏳') ? null : cur))
         setConversations((prev) =>
           prev.map((c) => {
             if (c.id !== id) return c
