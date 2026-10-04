@@ -45,8 +45,7 @@ services:
     mem_limit: 64m
     networks:
       - ia
-
-  tagger:
+      - coolify
     build: .
     restart: unless-stopped
     depends_on:
@@ -71,4 +70,7 @@ volumes:
 networks:
   ia:
     driver: bridge
+  # Traefik de Coolify vive acá — chatfront se une para poder ser proxeado
+  coolify:
+    external: true
 
