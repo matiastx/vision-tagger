@@ -1,0 +1,16 @@
+{$CHAT_PORT:3000} {
+	basicauth {
+		{$CHAT_USER} {$CHAT_PASS_HASH}
+	}
+	encode gzip
+
+	# Proxy interno a Ollama: el navegador nunca habla con ollama directo
+	handle_path /api/* {
+		reverse_proxy ollama:11434
+	}
+
+	# SPA
+	root * /srv
+	file_server
+	try_files {path} /index.html
+}

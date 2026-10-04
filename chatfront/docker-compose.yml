@@ -1,0 +1,13 @@
+# ChatLocal deployado como Docker Compose (para poder bindear el puerto
+# a la IP tailnet del VPS — el pack nixpacks no lo permite).
+#
+# SOLO accesible desde la tailnet: el puerto 3000 queda publicado únicamente
+# en 100.75.207.93 (interfaz tailscale del host). Sin dominio público.
+services:
+  chatlocal:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '100.75.207.93:3000:3000'
+    cpus: '0.5'
+    mem_limit: 128m

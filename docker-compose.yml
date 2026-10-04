@@ -16,20 +16,33 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      # CORS: ChatLocal ahora vive en la tailnet (100.75.207.93:3000)
-      OLLAMA_ORIGINS: 'http://100.75.207.93:3000,http://100.75.207.93'      # Descarga el modelo de RAM a los 2 min sin uso → en reposo el
+      # Descarga el modelo de RAM a los 2 min sin uso → en reposo el
       # contenedor queda casi sin consumo (se "despierta" solo ante el
       # primer request de chat o tagger)
       OLLAMA_KEEP_ALIVE: '2m'
       OLLAMA_MAX_LOADED_MODELS: '1'
       OLLAMA_NUM_PARALLEL: '1'
-    # Solo accesible desde la tailnet del VPS (Tailscale), nunca público:
-    # bind del puerto a la IP tailscale del host
-    ports:
-      - '100.75.207.93:11434:11434'
-    # VPS: 4 vCPU / 8 GB totales (compartidos con Coolify/backoffice/InsForge)
+    # Sin puertos ni dominio: ollama SOLO es accesible desde la red interna.
+    # El chat llega vía reverse_proxy del servicio chatfront (borra el requisito
+    # de publicar 11434 en cualquier lado, ni tailnet ni Cloudflare Access).
     cpus: '3'
     mem_limit: 5g
+    networks:
+      - ia
+
+  chatfront:
+    build: ./chatfront
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      # Login del chat (basic_auth de Caddy): clave NUNCA en el repo,
+      # va como env en Coolify (CHAT_PASS_HASH) en formato bcrypt.
+      CHAT_USER: ${CHAT_USER:-matiastx85}
+      CHAT_PASS_HASH: ${CHAT_PASS_HASH}
+      CHAT_PORT: '3000'
+    cpus: '0.25'
+    mem_limit: 64m
     networks:
       - ia
 
