@@ -4,13 +4,12 @@
 	}
 	encode gzip
 
-	# Proxy interno a Ollama: el navegador nunca habla con ollama directo.
-	# handle (sin strip): ollama espera /api/* tal cual (/api/tags, /api/chat)
-	handle /api/* {
+	# API primero: /api/* → ollama interno (el navegador nunca habla directo)
+	route /api/* {
 		reverse_proxy ollama:11434
 	}
 
-	# SPA
+	# SPA (todo lo que no es /api/)
 	root * /srv
 	file_server
 	try_files {path} /index.html
