@@ -40,6 +40,9 @@ services:
       CHAT_PASS_HASH_B64: ${CHAT_PASS_HASH_B64}
     cpus: '0.25'
     mem_limit: 64m
+    # Puerto interno del Caddy (sin bindear al host: Traefik lo proxea por label)
+    expose:
+      - '3000'
     networks:
       - ia
       - coolify
