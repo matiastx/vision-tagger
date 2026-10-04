@@ -90,21 +90,28 @@ async function downloadPhoto(storagePath) {
   return buf.toString('base64')
 }
 
-const PROMPT = (marcas) => `Sos un auditor visual de merchandising en puntos de venta (Argentina). Analizá la foto y devolvé SOLO un JSON con este esquema exacto:
+const PROMPT = (marcas) => `Sos un auditor visual de merchandising de una bodega de VINOS. Analizá la foto y devolvé SOLO un JSON con este esquema exacto:
 {
+  "es_vino": true/false,
   "scene": "gondola|puntera|estanteria|exhibidor|isla|caja|degustacion|otro",
-  "envases": ["botella","tetra_brick","lata","sachet","doypack","frasco","carton","bolsa","otro"],
-  "marcas": ["<marcas propias visibles>"],
-  "otras_marcas": ["<otras marcas/competencia visibles>"],
+  "envases": ["botella","tetra_brick"],
+  "marcas": ["<marcas propias de vino visibles>"],
+  "otras_marcas": ["<otras marcas de vino/competencia visibles>"],
   "pop": true/false,
   "pop_detalle": "<qué material POP se ve, o vacío>",
   "promo": true/false,
-  "promo_detalle": "<qué promo/offer se ve, o vacío>",
-  "tags": ["<etiquetas libres en español: gondola_completa, gondola_desabastecida, puntera_completa, puntera_incompleta, exhibidor_armado, degustacion_montada, producto_frenteado, precios_visibles, etc>"],
+  "promo_detalle": "<qué promo/offer de vinos se ve, o vacío>",
+  "tags": ["<etiquetas en español: gondola_completa, gondola_desabastecida, puntera_completa, puntera_incompleta, exhibidor_armado, degustacion_montada, producto_frenteado, precios_visibles, etc>"],
   "descripcion": "<una oración breve en español describiendo la escena>"
 }
+REGLA DE ALCANCE (muy importante):
+- Solo tageamos VINO en envase BOTELLA o TETRA BRICK (brik). 
+- Si la foto NO contiene vinos en botella/tetra brick (o solo hay otros productos, vidrio vacío, caras, notas) → respondé:
+  {"es_vino": false, "scene": "otro", "envases": [], "marcas": [], "otras_marcas": [], "pop": false, "pop_detalle": null, "promo": false, "promo_detalle": null, "tags": ["no_vino"], "descripcion": "<qué se ve en una oración>"}
+- Si es_vino = true: listá SOLO marcas/etiquetas realmente legibles en la foto; no supongas; si no leés ninguna marca con claridad, dejá marcas: [] y explicá en descripcion.
+- Envases: solo "botella" y/o "tetra_brick" (u "otro" si hay otro envase de vino tipo lata de vino).
 Marcas propias (reconocer por logo/etiqueta, escribir exactamente así): ${marcas.join(', ')}.
-Reglas: arrays vacíos si no hay; pop/promo nullean a false si no se ven; no inventes marcas; respondé SOLO el JSON sin texto extra.`
+Reglas: arrays vacíos si no hay; pop/promo = false si no se ven; no inventes marcas; respondé SOLO el JSON sin texto extra.`
 
 /** Normaliza la respuesta del modelo a la shape de foto_tags. */
 function normalizeTags(raw) {
@@ -123,6 +130,9 @@ function normalizeTags(raw) {
     promo_detalle: txt(raw.promo_detalle),
     tags: arr(raw.tags),
     descripcion: txt(raw.descripcion),
+    // Scope: false = la foto no es de vino-botella/brik → se guarda marcada
+    // igual (no se reintenta) pero las galerías/filtros la ignoran.
+    aplica: raw.es_vino !== false,
   }
 }
 
@@ -151,14 +161,25 @@ async function tagWithOllama(base64) {
 
 /** Upsert en foto_tags. PostgREST merge-duplicates a veces falla → patch-then-post. */
 async function upsertTags(foto, tags) {
+  const norm = normalizeTags(tags)
   const row = {
     foto_id: foto.id,
     storage_path: foto.storage_path,
     photo_kind: foto.photo_kind ?? null,
     model: MODEL,
     raw: tags,
+    aplica: norm.aplica,
     processed_at: new Date().toISOString(),
-    ...normalizeTags(tags),
+    scene: norm.scene,
+    envases: norm.envases,
+    marcas: norm.marcas,
+    otras_marcas: norm.otras_marcas,
+    pop: norm.pop,
+    pop_detalle: norm.pop_detalle,
+    promo: norm.promo,
+    promo_detalle: norm.promo_detalle,
+    tags: norm.tags,
+    descripcion: norm.descripcion,
   }
   // Intento upsert nativo
   const up = await fetch(`${INSFORGE_URL}/api/database/records/foto_tags`, {
@@ -240,11 +261,45 @@ async function runPass({ reprocess = false, dryRun = false } = {}) {
   return { ok, fail }
 }
 
-/** ms hasta la próxima corrida: la próxima BATCH_HOUR local. */
-function msUntilNextBatch() {
+/** Ventana horaria del tageo (app_config, leída cada ciclo — se puede
+ *  cambiar desde la app admin sin redeployear). */
+async function getTaggerWindow() {
+  try {
+    const rows = await dbGet('app_config?select=tagger_window_start,tagger_window_end&limit=1')
+    const cfg = Array.isArray(rows) ? rows[0] : null
+    const start = Number.isInteger(cfg?.tagger_window_start) ? cfg.tagger_window_start : 2
+    const end = Number.isInteger(cfg?.tagger_window_end) ? cfg.tagger_window_end : 6
+    return { start, end }
+  } catch {
+    return { start: 2, end: 6 } // default: 2 AM a 6 AM
+  }
+}
+
+/** ¿estamos dentro de la ventana? start==end → 24/7. start>end → cruza medianoche. */
+function inWindow(now, { start, end }) {
+  if (start === end) return true
+  const h = now.getHours()
+  return start < end ? (h >= start && h < end) : (h >= start || h < end)
+}
+
+/** Corre pasadas dentro de la ventana hasta que no queden pendientes. */
+async function runUntilEmpty() {
+  let pass = 0
+  for (;;) {
+    pass++
+    const { ok, fail } = await runPass()
+    const pending = (await fetchPending(false)).length
+    console.log(`[ventana] pasada ${pass}: ok=${ok} fail=${fail} quedan=${pending}`)
+    if (pending === 0 || (ok === 0 && fail === 0)) break
+    await sleep(5000)
+  }
+}
+
+/** ms hasta el próximo inicio de ventana (local TZ del container). */
+function msUntilWindowStart(start) {
   const now = new Date()
   const next = new Date(now)
-  next.setHours(BATCH_HOUR, 0, 0, 0)
+  next.setHours(start, 0, 0, 0)
   if (next <= now) next.setDate(next.getDate() + 1)
   return next - now
 }
@@ -261,13 +316,26 @@ async function main() {
     return
   }
 
-  // Modo daemon: batch nocturno a BATCH_HOUR + watch cada WATCH para nuevas
-  console.log(`Daemon: batch diario ${BATCH_HOUR}:00 + watch cada ${WATCH_MS / 60000} min`)
-  setTimeout(() => {
-    runPass({ reprocess: ARGS.has('--reprocess') }).catch((e) => console.error('batch error:', e))
-    setInterval(() => runPass().catch((e) => console.error('batch error:', e)), 24 * 3600_000)
-  }, msUntilNextBatch())
-  setInterval(() => runPass().catch((e) => console.error('watch error:', e)), WATCH_MS)
+  // Daemon: dentro de la ventana horaria (app_config) corre en loop hasta
+  // terminar la cola; fuera espera al próximo inicio. Relee la config cada ciclo.
+  console.log('Daemon: ventana desde app_config (relee cada 10 min)')
+  for (;;) {
+    const win = await getTaggerWindow()
+    const now = new Date()
+    if (inWindow(now, win)) {
+      console.log(`[${now.toISOString()}] En ventana ${win.start}–${win.end}h → corriendo`)
+      try {
+        await runUntilEmpty()
+      } catch (e) {
+        console.error('ventana error:', e)
+      }
+      await sleep(10 * 60_000) // re-chequeo
+    } else {
+      const wait = Math.min(msUntilWindowStart(win.start), 10 * 60_000)
+      console.log(`[${now.toISOString()}] Fuera de ventana (${win.start}–${win.end}h); próximo chequeo en ${(wait / 60000).toFixed(0)} min`)
+      await sleep(wait)
+    }
+  }
 }
 
 main().catch((e) => {

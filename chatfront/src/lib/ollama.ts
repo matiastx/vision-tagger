@@ -1,21 +1,14 @@
 // Cliente Ollama mínimo (sin SDK): /api/tags y /api/chat con streaming NDJSON.
-// Soporta Cloudflare Access: se envían los headers del Service Token
-// (CF-Access-Client-Id / CF-Access-Client-Secret) cuando están configurados.
+// Auth: credenciales del login (Basic Auth de Caddy sobre /api/*).
 
 export interface Settings {
+  /** Default: mismo origen (el Caddy del stack proxea /api/* → ollama interno). */
   baseUrl: string
-  /** Cloudflare Access Service Token — Client ID (Zero Trust → Service Auth). */
-  accessClientId: string
-  /** Cloudflare Access Service Token — Client Secret. */
-  accessClientSecret: string
   model: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  // '' = mismo origen (el Caddy del stack proxea /api/* → ollama interno)
   baseUrl: '',
-  accessClientId: '',
-  accessClientSecret: '',
   model: '',
 }
 
@@ -26,21 +19,21 @@ export interface ChatMessage {
   images?: string[]
 }
 
-const headers = (s: Settings): HeadersInit => ({
+export interface ChatAuth {
+  user: string
+  password: string
+}
+
+const headers = (s: Settings, auth: ChatAuth | null): HeadersInit => ({
   'Content-Type': 'application/json',
-  ...(s.accessClientId && s.accessClientSecret
-    ? {
-        'CF-Access-Client-Id': s.accessClientId,
-        'CF-Access-Client-Secret': s.accessClientSecret,
-      }
-    : {}),
+  ...(auth ? { Authorization: `Basic ${btoa(`${auth.user}:${auth.password}`)}` } : {}),
 })
 
 const base = (s: Settings) => s.baseUrl.replace(/\/$/, '')
 
-/** Modelos disponibles en el servidor. */
-export async function listModels(s: Settings): Promise<string[]> {
-  const res = await fetch(`${base(s)}/api/tags`, { headers: headers(s) })
+/** Modelos disponibles en el servidor (valida credenciales si las hay). */
+export async function listModels(s: Settings, auth: ChatAuth | null): Promise<string[]> {
+  const res = await fetch(`${base(s)}/api/tags`, { headers: headers(s, auth) })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const json = (await res.json()) as { models?: { name: string }[] }
   return (json.models ?? []).map((m) => m.name)
@@ -52,6 +45,7 @@ export async function listModels(s: Settings): Promise<string[]> {
  */
 export async function chatStream(
   s: Settings,
+  auth: ChatAuth | null,
   model: string,
   messages: ChatMessage[],
   onChunk: (text: string) => void,
@@ -59,7 +53,7 @@ export async function chatStream(
 ): Promise<void> {
   const res = await fetch(`${base(s)}/api/chat`, {
     method: 'POST',
-    headers: headers(s),
+    headers: headers(s, auth),
     body: JSON.stringify({ model, messages, stream: true }),
     signal,
   })

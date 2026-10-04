@@ -1,16 +1,21 @@
 :3000 {
-	basic_auth {
-		@CHAT_USER@ @CHAT_PASS_HASH@
-	}
 	encode gzip
 
-	# /api/* → ollama interno (el navegador nunca habla con ollama directo)
+	# Solo la API queda detrás de basic_auth (el login vive en la SPA).
 	@api path /api/*
 	handle @api {
+		basic_auth {
+			@CHAT_USER@ @CHAT_PASS_HASH@
+		}
 		reverse_proxy ollama:11434
 	}
 
-	# Todo lo demás → SPA
+	# SPA: libre (el usuario entra con el login de la página)
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	# El index nunca queda cacheado (si no, F5 traía el bundle viejo → página negra)
+	header / Cache-Control "no-cache, must-revalidate"
+
 	handle {
 		root * /srv
 		file_server
