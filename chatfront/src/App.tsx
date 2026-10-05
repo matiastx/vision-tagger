@@ -38,6 +38,10 @@ const loadJSON = <T,>(key: string, fallback: T): T => {
     // (conversaciones), devolverlo tal cual: transformarlo en objeto rompe
     // .find/.map y la página queda negra (bug F5).
     if (Array.isArray(parsed)) return parsed
+    // Blindaje: si el fallback es array pero lo guardado es otra cosa
+    // (corrupción de versiones viejas), ignorar el valor corrupto.
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback
+    if (parsed === null || typeof parsed !== 'object') return parsed
     return { ...(fallback as object), ...(parsed as object) } as T
   } catch {
     return fallback
