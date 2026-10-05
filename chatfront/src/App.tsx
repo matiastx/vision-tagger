@@ -146,21 +146,42 @@ export default function App() {
     setLoginError(null)
     try {
       const cand = { user: loginUser.trim(), password: loginPass }
-      await listModels(settings, cand) // valida contra `/api/tags`
+      // Probar con el baseUrl guardado; si el servidor no responde (DNS viejo
+      // de ollama.mgtsolutions.uk, timeout, etc.), reintentar same-origin —
+      // el proxy del stack es la configuración correcta por defecto.
+      try {
+        await listModels(settings, cand) // valida contra `/api/tags`
+      } catch (err) {
+        const msg = String(err instanceof Error ? err.message : err)
+        if (/HTTP 401/.test(msg)) throw err // credencial mala: NO reintentar
+        if (settings.baseUrl !== DEFAULT_SETTINGS.baseUrl) {
+          const fallbackSettings = { ...settings, baseUrl: DEFAULT_SETTINGS.baseUrl }
+          await listModels(fallbackSettings, cand)
+          // El mismo-origin funciona → adoptarlo para siempre (migra settings)
+          setSettings(fallbackSettings)
+        } else {
+          throw err
+        }
+      }
       setAuth(cand)
       setAttempts(0)
       setLockedUntil(0)
     } catch (err) {
+      const msg = String(err instanceof Error ? err.message : err)
       const failed = attempts + 1
+      // "Servidor inalcanzable" no cuenta como intento fallido de contraseña
+      if (!/HTTP 401/.test(msg)) {
+        setLoginError(`No se pudo conectar con el servidor (${msg}). Revisá tu conexión.`)
+        return
+      }
       setAttempts(failed)
       if (failed >= MAX_ATTEMPTS) {
         const until = Date.now() + LOCK_MS
         setLockedUntil(until)
-        const mm = Math.ceil(LOCK_MS / 60000)
-        setLoginError(`Demasiados intentos. Te bloqueé por ${mm} min.`)
+        setLoginError('Demasiados intentos. Te bloqueé por 60 min.')
       } else {
         setLoginError(
-          `Credenciales inválidas (${err instanceof Error ? err.message : ''}). Te quedan ${MAX_ATTEMPTS - failed} intento(s).`,
+          `Credenciales inválidas. Te quedan ${MAX_ATTEMPTS - failed} intento(s).`,
         )
       }
     } finally {
