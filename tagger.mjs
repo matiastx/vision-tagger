@@ -63,7 +63,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /** PostgREST GET contra /api/database/records/{tabla}. */
 async function dbGet(path) {
-  const res = await fetch(`${INSFORGE_URL}/api/database/records/${path}`, { headers: DBH })
+  const res = await fetch(`${INSFORGE_URL}/api/database/records/${path}`, {
+    headers: DBH,
+    signal: AbortSignal.timeout(30_000),
+  })
   if (!res.ok) throw new Error(`DB GET ${path}: HTTP ${res.status} ${await res.text()}`)
   return res.json()
 }
@@ -84,7 +87,7 @@ async function fetchPending(reprocess) {
 /** Descarga binaria de una foto del bucket público. */
 async function downloadPhoto(storagePath) {
   const url = `${INSFORGE_URL}/api/storage/buckets/${BUCKET}/objects/${storagePath}`
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(60_000) })
   if (!res.ok) throw new Error(`Download ${storagePath}: HTTP ${res.status}`)
   const buf = Buffer.from(await res.arrayBuffer())
   return buf.toString('base64')
@@ -141,6 +144,8 @@ async function tagWithOllama(base64) {
   const res = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    // 5 min: cube cold-load del modelo (~3 min en CPU) + inferencia por foto
+    signal: AbortSignal.timeout(300_000),
     body: JSON.stringify({
       model: MODEL,
       format: 'json',
@@ -169,6 +174,9 @@ async function upsertTags(foto, tags) {
     model: MODEL,
     raw: tags,
     aplica: norm.aplica,
+    // Limpiar error de intentos previos: si esta fila ya existía con error
+    // (retry), el upsert debe marcarla como OK o nunca sale de la cola.
+    error: null,
     processed_at: new Date().toISOString(),
     scene: norm.scene,
     envases: norm.envases,
@@ -185,13 +193,14 @@ async function upsertTags(foto, tags) {
   const up = await fetch(`${INSFORGE_URL}/api/database/records/foto_tags`, {
     method: 'POST',
     headers: { ...DBH, Prefer: 'resolution=merge-duplicates,return=minimal' },
+    signal: AbortSignal.timeout(30_000),
     body: JSON.stringify(row),
   })
   if (up.ok || up.status === 201) return
   // Fallback: PATCH por UNIQUE(storage_path); si 0 filas → POST
   const patch = await fetch(
     `${INSFORGE_URL}/api/database/records/foto_tags?storage_path=eq.${encodeURIComponent(foto.storage_path)}`,
-    { method: 'PATCH', headers: { ...DBH, Prefer: 'return=representation' }, body: JSON.stringify(row) },
+    { method: 'PATCH', headers: { ...DBH, Prefer: 'return=representation' }, signal: AbortSignal.timeout(30_000), body: JSON.stringify(row) },
   )
   if (patch.ok) {
     const patched = await patch.json().catch(() => [])
@@ -200,6 +209,7 @@ async function upsertTags(foto, tags) {
   const post = await fetch(`${INSFORGE_URL}/api/database/records/foto_tags`, {
     method: 'POST',
     headers: { ...DBH, Prefer: 'return=minimal' },
+    signal: AbortSignal.timeout(30_000),
     body: JSON.stringify(row),
   })
   if (!post.ok) throw new Error(`Upsert foto_tags: HTTP ${post.status} ${await post.text()}`)
@@ -228,6 +238,7 @@ async function processOne(foto, idx, total) {
     await fetch(`${INSFORGE_URL}/api/database/records/foto_tags`, {
       method: 'POST',
       headers: { ...DBH, Prefer: 'resolution=merge-duplicates,return=minimal' },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         foto_id: foto.id,
         storage_path: foto.storage_path,
