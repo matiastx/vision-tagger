@@ -47,6 +47,7 @@ const MARCAS_PROPIAS = (
 const ARGS = new Set(process.argv.slice(2))
 const LIMIT_IDX = process.argv.indexOf('--limit')
 const LIMIT = LIMIT_IDX >= 0 ? Number(process.argv[LIMIT_IDX + 1]) || 0 : 0
+const STARTED_AT = Date.now()
 
 if (!INSFORGE_URL || !API_KEY) {
   console.error('Faltan INSFORGE_URL / INSFORGE_API_KEY')
@@ -264,7 +265,13 @@ async function runPass({ reprocess = false, dryRun = false } = {}) {
   }
   let ok = 0
   let fail = 0
+  let lastFlagCheck = 0
   for (let i = 0; i < list.length; i++) {
+    // Restart desde la web: chequeo liviano, throttleado a 1 por 30 s
+    if (Date.now() - lastFlagCheck > 30_000) {
+      lastFlagCheck = Date.now()
+      await maybeExitForRestart(`pasada foto ${i + 1}/${list.length}`)
+    }
     if (await processOne(list[i], i, list.length)) ok++
     else fail++
   }
@@ -287,6 +294,41 @@ async function getTaggerWindow() {
   }
 }
 
+/** ¿El admin pidió restart desde la web? (tagger_restart_requested_at > boot) */
+async function restartRequested() {
+  try {
+    const rows = await dbGet('app_config?select=tagger_restart_requested_at&limit=1')
+    const at = Array.isArray(rows) ? rows[0]?.tagger_restart_requested_at : null
+    return !!at && new Date(at).getTime() > STARTED_AT
+  } catch {
+    return false
+  }
+}
+
+/** Salida limpida: docker (restart: unless-stopped) revive el contenedor. */
+async function maybeExitForRestart(where) {
+  if (await restartRequested()) {
+    console.log(`[${where}] restart solicitado desde la web → saliendo (docker revive)`)
+    process.exit(0)
+  }
+}
+
+/** Pulso de vida en app_config (la web muestra "última señal" + último arranque). */
+async function heartbeat(onBoot = false) {
+  const now = new Date().toISOString()
+  const payload = onBoot ? { tagger_last_boot: now, tagger_last_seen: now } : { tagger_last_seen: now }
+  try {
+    await fetch(`${INSFORGE_URL}/api/database/records/app_config?id=eq.1`, {
+      method: 'PATCH',
+      headers: DBH,
+      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    /* best effort — no bloquea el tageo */
+  }
+}
+
 /** ¿estamos dentro de la ventana? start==end → 24/7. start>end → cruza medianoche. */
 function inWindow(now, { start, end }) {
   if (start === end) return true
@@ -306,6 +348,8 @@ async function runUntilEmpty() {
       console.warn(`[ventana] tope de 8 h alcanzado — pausa hasta el próximo chequeo`)
       return 'capped'
     }
+    // Restart solicitado desde la web (también aplica entre pasadas)
+    await maybeExitForRestart('ventana')
     // Releer la ventana entre pasadas — si el toggle se apagó o la ventana
     // se cerró, paramos la sesión.
     const win = await getTaggerWindow()
@@ -314,6 +358,7 @@ async function runUntilEmpty() {
       return 'window_closed'
     }
     pass++
+    await heartbeat()
     const { ok, fail } = await runPass()
     const pending = (await fetchPending(false)).length
     console.log(`[ventana] pasada ${pass}: ok=${ok} fail=${fail} quedan=${pending}`)
@@ -333,6 +378,7 @@ function msUntilWindowStart(start) {
 
 async function main() {
   console.log(`vision-tagger | ollama=${OLLAMA_HOST} model=${MODEL} | insforge=${INSFORGE_URL}`)
+  await heartbeat(true) // stamp de arranque (la web muestra último arranque)
 
   if (ARGS.has('--dry-run')) {
     await runPass({ dryRun: true })
@@ -347,6 +393,8 @@ async function main() {
   // terminar la cola; fuera espera al próximo inicio. Relee la config cada ciclo.
   console.log('Daemon: ventana desde app_config (relee cada 10 min)')
   for (;;) {
+    await heartbeat()
+    await maybeExitForRestart('daemon')
     const win = await getTaggerWindow()
     const now = new Date()
     if (!win.enabled) {
