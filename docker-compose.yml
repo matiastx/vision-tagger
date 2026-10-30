@@ -23,8 +23,7 @@ services:
     # Sin bind al host: expuesto por Traefik en ollama.mgtsolutions.uk
     # (Cloudflare Access + Service Token) para clientes API (OpenCode, etc).
     cpus: '3'
-    # cap ampliado para qwen2.5-coder:7b (~4.7GB pesos + KV); si el host no tiene RAM alcanza OOM solo este contenedor
-    mem_limit: 8g
+    mem_limit: 5g
     expose:
       - '11434'
     networks:
