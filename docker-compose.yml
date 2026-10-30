@@ -20,11 +20,15 @@ services:
       OLLAMA_KEEP_ALIVE: '30m'
       OLLAMA_MAX_LOADED_MODELS: '2'
       OLLAMA_NUM_PARALLEL: '2'
-    # Sin puertos ni dominio: ollama SOLO es accesible desde la red interna.
+    # Sin bind al host: expuesto por Traefik en ollama.mgtsolutions.uk
+    # (Cloudflare Access + Service Token) para clientes API (OpenCode, etc).
     cpus: '3'
     mem_limit: 5g
+    expose:
+      - '11434'
     networks:
       - ia
+      - coolify
 
   chatfront:
     build: ./chatfront
